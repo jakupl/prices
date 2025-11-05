@@ -1,4 +1,3 @@
-// mergePrices.mjs
 import fs from "fs";
 
 const API_KEY = process.env.SKINS_API_KEY;
