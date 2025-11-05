@@ -1,9 +1,9 @@
 name: Build and publish mergedPriceList
 
 permissions:
-  contents: write       # pozwala pushować do repo
-  pages: write          # potrzebne jeśli używasz Pages API
-  id-token: write       # przydatne jeśli używasz OIDC, nie jest obowiązkowe
+  contents: write
+  pages: write
+  id-token: write
 
 on:
   schedule:
@@ -13,14 +13,21 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
+
+      - name: Install deps (optional)
+        run: |
+          if [ -f package.json ]; then npm ci; fi
 
       - name: Run mergePrices
         env:
