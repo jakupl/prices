@@ -1,7 +1,7 @@
 name: Build and publish mergedPriceList
 
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
 
@@ -13,7 +13,6 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -25,7 +24,7 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Install deps (optional)
+      - name: Install dependencies (optional)
         run: |
           if [ -f package.json ]; then npm ci; fi
 
@@ -34,8 +33,14 @@ jobs:
           SKINS_API_KEY: ${{ secrets.SKINS_API_KEY }}
         run: node mergePrices.mjs
 
-      - name: Deploy public/ to gh-pages
-        uses: peaceiris/actions-gh-pages@v3
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./public
+          path: ./public
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
