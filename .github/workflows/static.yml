@@ -1,0 +1,38 @@
+name: Build and publish mergedPriceList
+
+# run every hour at minute 0, plus allow manual trigger
+on:
+  schedule:
+    - cron: '0 * * * *'   # co godzinę (na początku godziny)
+  workflow_dispatch: {}   # pozwala uruchomić ręcznie
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'    # Node 18 ma globalny fetch
+
+      - name: Install dependencies (if any)
+        run: |
+          if [ -f package.json ]; then npm ci; fi
+
+      - name: Run mergePrices script
+        env:
+          SKINS_API_KEY: ${{ secrets.SKINS_API_KEY }}
+        run: |
+          # ensure public exists (script tworzy sam, ale to bezpieczne)
+          node mergePrices.mjs
+
+      - name: Deploy public/ to gh-pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
