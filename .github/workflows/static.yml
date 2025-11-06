@@ -1,4 +1,4 @@
-name: Build and publish mergedPriceList
+name: Build and publish mergedPriceList (official Pages flow)
 
 permissions:
   contents: read
@@ -7,7 +7,7 @@ permissions:
 
 on:
   schedule:
-    - cron: '0 * * * *'
+    - cron: '0 * * * *'    # co godzinę
   workflow_dispatch: {}
 
 jobs:
@@ -17,25 +17,30 @@ jobs:
       name: github-pages
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
 
-      - name: Run mergePrices
+      - name: Run mergePrices (create public/mergedPriceList.json)
         env:
           SKINS_API_KEY: ${{ secrets.SKINS_API_KEY }}
         run: |
+          set -e
+          echo ">>> Uruchamiam mergePrices.mjs"
           node mergePrices.mjs
-
-      - name: Ensure public exists
-        run: |
+          echo ">>> Zawartość katalogu public/:"
           ls -la public || true
-          if [ ! -d public ] || [ -z "$(ls -A public)" ]; then
-            echo "::error ::public directory missing or empty"; exit 1;
+          if [ ! -f public/mergedPriceList.json ]; then
+            echo "::error ::public/mergedPriceList.json missing"; exit 2;
+          fi
+          if [ ! -f public/index.html ]; then
+            echo "::warning ::public/index.html missing — site root will 404 unless index.html is present"
           fi
 
       - name: Configure Pages
