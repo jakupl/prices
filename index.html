@@ -3,130 +3,284 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Lista cen — tabela</title>
+  <title>Price Table</title>
   <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; padding:20px; background:#f6f7fb; color:#111}
-    h1{margin:0 0 8px}
-    .meta{font-size:0.9rem; color:#555}
-    .notice{margin-top:10px;padding:10px;background:#fff;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04)}
-    .error{color:#8a1f1f;background:#fff1f1;border-left:4px solid #f1a;padding:8px;border-radius:6px;margin-top:12px}
-    table{width:100%;border-collapse:collapse;margin-top:12px;background:#fff}
-    th,td{padding:8px;border-bottom:1px solid #eee;text-align:left;font-size:0.95rem}
-    th{background:#fafafa;position:sticky;top:0}
-    #reload{margin-left:8px}
-    .small{font-size:0.85rem;color:#666}
+    :root{
+      --bg:#f8fafc; --card:#fff; --muted:#6b7280; --accent:#0f172a;
+      --success:#10b981;
+    }
+    html,body{height:100%}
+    body{
+      font-family:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      margin:0; background:var(--bg); color:var(--accent); -webkit-font-smoothing:antialiased;
+      padding:24px;
+    }
+    .container{max-width:1100px;margin:0 auto}
+    .card{background:var(--card);border-radius:12px;padding:18px;box-shadow:0 6px 18px rgba(15,23,42,0.06)}
+    h1{margin:0 0 12px 0;font-size:20px}
+    .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+    .controls input[type="search"]{padding:8px 10px;border-radius:8px;border:1px solid #e6e9ee;min-width:240px}
+    .controls button{padding:8px 10px;border-radius:8px;border:1px solid #e6e9ee;background:#fff;cursor:pointer}
+    .controls .muted{color:var(--muted);font-size:13px}
+    .table-wrap{overflow:auto;border-radius:8px;border:1px solid #eef2f7}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    thead th{position:sticky;top:0;background:#f1f5f9;padding:10px 12px;text-align:left;font-weight:600;border-bottom:1px solid #e6eef6;cursor:pointer;user-select:none}
+    thead th.sortable:hover{background:#e6eef6}
+    tbody td{padding:10px 12px;border-bottom:1px solid #f1f5f9}
+    tbody tr:nth-child(odd){background:#fff}
+    tbody tr:nth-child(even){background:#fbfcfe}
+    td.right{text-align:right}
+    .small{font-size:12px;color:var(--muted)}
+    .error{color:#b91c1c}
+    .loading{color:var(--muted)}
+    .empty{padding:20px;text-align:center;color:var(--muted)}
+    .note{margin-top:12px;font-size:12px;color:var(--muted)}
   </style>
 </head>
 <body>
-  <h1>Lista cen</h1>
-  <div class="meta">Źródło: <code>mergedPriceList.json</code></div>
+  <div class="container">
+    <div class="card">
+      <h1>Price table</h1>
 
-  <div class="notice">
-    <div class="small">Spróbuję pobrać JSON z (1) <code>./mergedPriceList.json</code>, a jeśli to się nie uda z (2) pełnego URL.</div>
-    <div style="margin-top:8px">
-      <button id="reload">Pobierz ponownie</button>
-      <span id="status" class="small" style="margin-left:12px">—</span>
+      <div class="controls">
+        <input id="q" type="search" placeholder="Szukaj po nazwie (ItemName)..." />
+        <button id="refresh">Odśwież</button>
+        <button id="export">Eksport CSV</button>
+        <div class="muted" style="margin-left:auto" id="status">Ładowanie...</div>
+      </div>
+
+      <div class="table-wrap" id="tableWrap">
+        <table id="priceTable" aria-describedby="status">
+          <thead>
+            <tr>
+              <th data-key="itemName" class="sortable">ItemName ▲▼</th>
+              <th data-key="youpin898Price" class="sortable" style="text-align:right">youpin898Price ▲▼</th>
+              <th data-key="buffPrice" class="sortable" style="text-align:right">buffPrice ▲▼</th>
+              <th data-key="csfloatPrice" class="sortable" style="text-align:right">csfloatPrice ▲▼</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="note">
+        Źródło: <a href="https://jakupl.github.io/prices/mergedPriceList.json" target="_blank" rel="noopener">https://jakupl.github.io/prices/mergedPriceList.json</a>
+      </div>
     </div>
   </div>
 
-  <div id="tableWrap"></div>
-
   <script>
-    const ABS_URL = 'https://jakupl.github.io/prices/mergedPriceList.json';
+  (function(){
+    const URL = 'https://jakupl.github.io/prices/mergedPriceList.json';
+    const statusEl = document.getElementById('status');
+    const tbody = document.querySelector('#priceTable tbody');
+    const qInput = document.getElementById('q');
+    const refreshBtn = document.getElementById('refresh');
+    const exportBtn = document.getElementById('export');
+    const headers = document.querySelectorAll('thead th.sortable');
 
-    function showStatus(msg, isError = false) {
-      const s = document.getElementById('status');
-      s.textContent = msg;
-      s.style.color = isError ? 'crimson' : '';
-    }
+    let rawItems = []; // normalized array
+    let sortState = { key: 'itemName', dir: 1 }; // 1 asc, -1 desc
 
-    function makeTable(data) {
-      const wrap = document.getElementById('tableWrap');
-      wrap.innerHTML = '';
-      if (!data) { wrap.innerHTML = '<div class="error">Brak danych.</div>'; return; }
-
-      // Jeśli obiekt zawiera listę jako pole, spróbuj znaleźć ją
-      if (!Array.isArray(data)) {
-        for (const k of Object.keys(data)) {
-          if (Array.isArray(data[k])) { data = data[k]; break; }
-        }
-      }
-
-      if (!Array.isArray(data) || data.length === 0) {
-        wrap.innerHTML = '<div class="error">Dane nie są tablicą obiektów lub są puste.</div>';
-        return;
-      }
-
-      const keySet = new Set();
-      for (let i=0;i<Math.min(50,data.length);i++){
-        const it = data[i];
-        if (it && typeof it === 'object') Object.keys(it).forEach(k=>keySet.add(k));
-      }
-      const cols = Array.from(keySet);
-
-      const table = document.createElement('table');
-      const thead = document.createElement('thead');
-      const headRow = document.createElement('tr');
-      cols.forEach(c => { const th = document.createElement('th'); th.textContent = c; headRow.appendChild(th); });
-      thead.appendChild(headRow);
-      table.appendChild(thead);
-
-      const tbody = document.createElement('tbody');
-      data.forEach(row => {
-        const tr = document.createElement('tr');
-        cols.forEach(c => {
-          const td = document.createElement('td');
-          let v = row == null ? '' : row[c];
-          if (v === null || typeof v === 'undefined') v = '';
-          if (typeof v === 'object') v = JSON.stringify(v);
-          td.textContent = v;
-          tr.appendChild(td);
-        });
-        tbody.appendChild(tr);
-      });
-      table.appendChild(tbody);
-      wrap.appendChild(table);
-    }
-
-    async function fetchJson(url) {
-      const resp = await fetch(url, {cache: 'no-cache'});
-      if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
-      return await resp.json();
-    }
-
+    // --- Fetch & normalize ---
     async function load() {
-      showStatus('Próba: ./mergedPriceList.json ...');
+      status('Ładowanie...', 'loading');
       try {
-        const data = await fetchJson('./mergedPriceList.json');
-        showStatus('Sukces: pobrano ./mergedPriceList.json');
-        makeTable(data);
-        return;
-      } catch (err1) {
-        console.warn('Względna ścieżka nie zadziałała:', err1);
-        showStatus('Nie udało się pobrać ./mergedPriceList.json — próbuję pełny URL ...');
-      }
-
-      try {
-        const data2 = await fetchJson(ABS_URL);
-        showStatus('Sukces: pobrano z pełnego URL.');
-        makeTable(data2);
-      } catch (err2) {
-        console.error('Pełny URL też nie zadziałał:', err2);
-        // Rozpoznawanie najczęstszych komunikatów
-        let msg = String(err2);
-        if (msg.includes('Failed to fetch') || msg.includes('TypeError')) {
-          msg = 'Błąd sieciowy (może CORS lub brak dostępu). Sprawdź Console/Network w DevTools.';
-        }
-        showStatus('Błąd: ' + msg, true);
-        document.getElementById('tableWrap').innerHTML =
-          '<div class="error">Nie udało się pobrać pliku JSON. Sprawdź Console (F12) → Network oraz komunikaty CORS.</div>';
+        const res = await fetch(URL, { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status + ' — ' + res.statusText);
+        const json = await res.json();
+        rawItems = normalizeJson(json);
+        status('Załadowano ' + rawItems.length + ' pozycji');
+        render();
+      } catch (err) {
+        status('Błąd: ' + (err && err.message ? err.message : String(err)), 'error');
+        tbody.innerHTML = '<tr><td class="empty" colspan="4">Nie udało się pobrać danych.</td></tr>';
       }
     }
 
-    document.getElementById('reload').addEventListener('click', load);
+    function normalizeJson(json) {
+      // Output: [{ itemName, youpin898Price, buffPrice, csfloatPrice, raw }]
+      const arr = [];
+      if (Array.isArray(json)) {
+        for (const e of json) arr.push(normalizeEntry(e));
+      } else if (json && typeof json === 'object') {
+        const keys = Object.keys(json);
+        // If object is already a map of itemName -> data
+        if (keys.length && keys.every(k => typeof json[k] === 'object')) {
+          for (const k of keys) arr.push(normalizeEntry(Object.assign({ itemName: k }, json[k])));
+        } else {
+          // Fallback: treat top-level object as single entry
+          arr.push(normalizeEntry(json));
+        }
+      }
+      return arr;
+    }
 
-    // uruchom od razu
+    function normalizeEntry(entry) {
+      function get(obj, ...keys) {
+        for (const k of keys) {
+          if (obj && typeof obj === 'object' && k in obj && obj[k] != null) return obj[k];
+        }
+        return undefined;
+      }
+      const itemName = entry.itemName || entry.name || entry.ItemName || entry.item_name || entry.key || entry.id || '(no name)';
+
+      const youpin898Price = get(entry, 'youpin898Price', 'youpin898_price', 'youpin898', 'youpin');
+      const buffPrice = get(entry, 'buffPrice', 'buff_price', 'buff');
+      const csfloatPrice = get(entry, 'csfloatPrice', 'csfloat_price', 'csfloat');
+
+      function extractNumber(v) {
+        if (v == null) return undefined;
+        if (typeof v === 'number') return v;
+        if (typeof v === 'string') {
+          const n = Number(v.replace(/[^0-9.\\-]/g, ''));
+          return Number.isFinite(n) ? n : undefined;
+        }
+        if (typeof v === 'object') return extractNumber(v.price ?? v.value ?? v.p ?? v.v);
+        return undefined;
+      }
+
+      return {
+        itemName: String(itemName),
+        youpin898Price: extractNumber(youpin898Price),
+        buffPrice: extractNumber(buffPrice),
+        csfloatPrice: extractNumber(csfloatPrice),
+        raw: entry
+      };
+    }
+
+    // --- Rendering ---
+    function render() {
+      const q = (qInput.value || '').trim().toLowerCase();
+      let list = rawItems.slice();
+
+      if (q) {
+        list = list.filter(it => it.itemName.toLowerCase().includes(q));
+      }
+
+      // sort
+      const key = sortState.key;
+      const dir = sortState.dir;
+      list.sort((a,b) => {
+        const A = a[key], B = b[key];
+        // if both numbers or both undefined
+        if (typeof A === 'number' && typeof B === 'number') return dir * (A - B);
+        if (typeof A === 'number') return -dir * 1; // numbers first
+        if (typeof B === 'number') return dir * 1;
+        // string compare
+        const sa = (A==null?'':String(A)).toLowerCase();
+        const sb = (B==null?'':String(B)).toLowerCase();
+        return dir * sa.localeCompare(sb);
+      });
+
+      if (list.length === 0) {
+        tbody.innerHTML = '<tr><td class="empty" colspan="4">Brak wyników.</td></tr>';
+        return;
+      }
+
+      const rows = list.map(it => {
+        return `<tr>
+          <td>${escapeHtml(it.itemName)}</td>
+          <td class="right">${formatPrice(it.youpin898Price)}</td>
+          <td class="right">${formatPrice(it.buffPrice)}</td>
+          <td class="right">${formatPrice(it.csfloatPrice)}</td>
+        </tr>`;
+      }).join('');
+      tbody.innerHTML = rows;
+    }
+
+    function formatPrice(p) {
+      if (p == null || isNaN(p)) return '-';
+      // localized with 2 decimals
+      return Number(p).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function escapeHtml(s){
+      return String(s)
+        .replace(/&/g,'&amp;')
+        .replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;')
+        .replace(/'/g,'&#039;');
+    }
+
+    // --- Sorting UI ---
+    headers.forEach(h => {
+      h.addEventListener('click', () => {
+        const key = h.dataset.key;
+        if (sortState.key === key) sortState.dir = -sortState.dir;
+        else { sortState.key = key; sortState.dir = 1; }
+        // visual: simple (no arrow change), re-render
+        render();
+      });
+    });
+
+    // --- Search & controls ---
+    qInput.addEventListener('input', debounce(render, 160));
+    refreshBtn.addEventListener('click', load);
+    exportBtn.addEventListener('click', () => {
+      const q = (qInput.value || '').trim().toLowerCase();
+      let list = rawItems.slice();
+      if (q) list = list.filter(it => it.itemName.toLowerCase().includes(q));
+      // apply sort
+      list.sort((a,b) => {
+        const A = a[sortState.key], B = b[sortState.key];
+        if (typeof A === 'number' && typeof B === 'number') return sortState.dir * (A - B);
+        if (typeof A === 'number') return -sortState.dir * 1;
+        if (typeof B === 'number') return sortState.dir * 1;
+        return sortState.dir * String(A).localeCompare(String(B));
+      });
+      downloadCSV(list);
+    });
+
+    function downloadCSV(list){
+      const header = ['ItemName','youpin898Price','buffPrice','csfloatPrice'];
+      const rows = list.map(it => [
+        csvEscape(it.itemName),
+        it.youpin898Price == null ? '' : Number(it.youpin898Price).toFixed(2),
+        it.buffPrice == null ? '' : Number(it.buffPrice).toFixed(2),
+        it.csfloatPrice == null ? '' : Number(it.csfloatPrice).toFixed(2)
+      ]);
+      const csv = [header, ...rows].map(r => r.join(',')).join('\\n');
+      const blob = new Blob([csv], {type: 'text/csv;charset=utf-8;'});
+      const url = URL_createObjectURLSafe(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'prices_export.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // revoke after a bit
+      setTimeout(()=> { try{ URL.revokeObjectURL(url); }catch(e){} }, 5000);
+    }
+
+    function csvEscape(s){
+      if (s == null) return '';
+      s = String(s);
+      if (s.includes('"') || s.includes(',') || s.includes('\\n')) {
+        return '"' + s.replace(/"/g, '""') + '"';
+      }
+      return s;
+    }
+
+    // safe URL.createObjectURL wrapper for older browsers
+    function URL_createObjectURLSafe(blob){
+      return (window.URL || window.webkitURL).createObjectURL(blob);
+    }
+
+    // --- Utilities ---
+    function status(text, kind='') {
+      statusEl.textContent = text;
+      statusEl.className = kind === 'error' ? 'error' : (kind === 'loading' ? 'loading' : 'small');
+    }
+    function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t = setTimeout(()=>fn(...a), ms); }; }
+
+    // initial load
     load();
+
+    // Helpful: expose render() for console debugging (optional)
+    window.__priceTable = { render, rawItems };
+  })();
   </script>
 </body>
 </html>
