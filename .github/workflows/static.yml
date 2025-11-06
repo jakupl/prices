@@ -1,4 +1,4 @@
-name: Build and publish mergedPriceList (diagnostic + pages deploy)
+name: Build and publish mergedPriceList
 
 permissions:
   contents: read
@@ -13,37 +13,29 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-
-    # <-- tu dodajemy environment wymagane przez actions/deploy-pages
     environment:
       name: github-pages
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '18'
 
-      - name: Run mergePrices (create public/mergedPriceList.json)
+      - name: Run mergePrices
         env:
           SKINS_API_KEY: ${{ secrets.SKINS_API_KEY }}
         run: |
-          set -e
-          echo "Uruchamiam mergePrices.mjs"
           node mergePrices.mjs
-          echo "Listing public/:"
+
+      - name: Ensure public exists
+        run: |
           ls -la public || true
-          if [ -f public/mergedPriceList.json ]; then
-            echo "FOUND mergedPriceList.json"
-            wc -c public/mergedPriceList.json
-          else
-            echo "::error ::Brak public/mergedPriceList.json — przerywam workflow"
-            exit 2
+          if [ ! -d public ] || [ -z "$(ls -A public)" ]; then
+            echo "::error ::public directory missing or empty"; exit 1;
           fi
 
       - name: Configure Pages
