@@ -12,9 +12,9 @@ const CNY_TO_USD = 7.13;
 const STOCK_THRESHOLD = 1;
 
 const sources = [
-  { site: "BUFF.163", key: "buffPrice", url: `https://skins-table.com/api_v2/items?apikey=${API_KEY}&app=${app}&site=BUFF.163` },
-  { site: "CSFLOAT", key: "csfloatPrice", url: `https://skins-table.com/api_v2/items?apikey=${API_KEY}&app=${app}&site=CSFLOAT` },
-  { site: "YOUPIN898", key: "youpin898Price", url: `https://skins-table.com/api_v2/items?apikey=${API_KEY}&app=${app}&site=YOUPIN898` }
+  { site: "BUFF.163", key: "buff", url: `https://skins-table.com/api_v2/items?apikey=${API_KEY}&app=${app}&site=BUFF.163` },
+  { site: "CSFLOAT", key: "csfloat", url: `https://skins-table.com/api_v2/items?apikey=${API_KEY}&app=${app}&site=CSFLOAT` },
+  { site: "YOUPIN898", key: "youpin", url: `https://skins-table.com/api_v2/items?apikey=${API_KEY}&app=${app}&site=YOUPIN898` }
 ];
 
 async function safeFetchJson(url, attempts = 3, timeoutMs = 15000) {
@@ -73,8 +73,11 @@ async function mergeAndSave() {
   console.log(`Total distinct item names across sources: ${allNames.size}`);
 
   const transformed = { items: {} };
+
   for (const name of allNames) {
-    const entry = { youpin898Price: null, buffPrice: null, csfloatPrice: null };
+    // we'll collect candidates then pick lowest
+    const candidates = [];
+
     for (const r of results) {
       const values = r.items[name];
       if (!values) continue;
@@ -86,13 +89,27 @@ async function mergeAndSave() {
       if (!Number.isFinite(stock) || stock < STOCK_THRESHOLD || !Number.isFinite(price)) continue;
 
       let finalPrice = price;
-      if (r.key === "buffPrice" || r.key === "youpin898Price") finalPrice = +(price / CNY_TO_USD).toFixed(2);
+      // convert from CNY to USD for buff and youpin (same behavior as original)
+      if (r.key === "buff" || r.key === "youpin") finalPrice = price / CNY_TO_USD;
 
-      entry[r.key] = finalPrice;
+      if (!Number.isFinite(finalPrice)) continue;
+
+      candidates.push({ price: finalPrice, site: r.key });
     }
-    if (entry.youpin898Price !== null || entry.buffPrice !== null || entry.csfloatPrice !== null) {
-      transformed.items[name] = entry;
-    }
+
+    if (candidates.length === 0) continue;
+
+    // pick the lowest price; deterministic tie-breaker: prefer csfloat, then buff, then youpin
+    candidates.sort((a, b) => {
+      if (a.price !== b.price) return a.price - b.price;
+      const pref = { csfloat: 0, buff: 1, youpin: 2 };
+      return (pref[a.site] ?? 99) - (pref[b.site] ?? 99);
+    });
+
+    const best = candidates[0];
+    // round to 2 decimals
+    const rounded = Math.round(best.price * 100) / 100;
+    transformed.items[name] = { price: rounded, site: best.site };
   }
 
   const countFinal = Object.keys(transformed.items).length;
