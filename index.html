@@ -3,266 +3,58 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Price Table</title>
+  <title>CS:GO Price Table</title>
   <style>
-    :root{
-      --bg:#f8fafc; --card:#fff; --muted:#6b7280; --accent:#0f172a;
-    }
-    html,body{height:100%}
-    body{
-      font-family:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
-      margin:0; background:var(--bg); color:var(--accent); -webkit-font-smoothing:antialiased;
-      padding:24px;
-    }
-    .container{max-width:1100px;margin:0 auto}
-    .card{background:var(--card);border-radius:12px;padding:18px;box-shadow:0 6px 18px rgba(15,23,42,0.06)}
-    h1{margin:0 0 12px 0;font-size:20px}
-    .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
-    .controls input[type="search"]{padding:8px 10px;border-radius:8px;border:1px solid #e6e9ee;min-width:240px}
-    .controls button{padding:8px 10px;border-radius:8px;border:1px solid #e6e9ee;background:#fff;cursor:pointer}
-    .controls .muted{color:var(--muted);font-size:13px}
-    .table-wrap{overflow:auto;border-radius:8px;border:1px solid #eef2f7}
-    table{width:100%;border-collapse:collapse;font-size:13px}
-    thead th{position:sticky;top:0;background:#f1f5f9;padding:10px 12px;text-align:left;font-weight:600;border-bottom:1px solid #e6eef6;cursor:pointer;user-select:none}
-    thead th.sortable:hover{background:#e6eef6}
-    tbody td{padding:10px 12px;border-bottom:1px solid #f1f5f9}
-    tbody tr:nth-child(odd){background:#fff}
-    tbody tr:nth-child(even){background:#fbfcfe}
-    td.right{text-align:right}
-    .small{font-size:12px;color:var(--muted)}
-    .error{color:#b91c1c}
-    .loading{color:var(--muted)}
-    .empty{padding:20px;text-align:center;color:var(--muted)}
-    .note{margin-top:12px;font-size:12px;color:var(--muted)}
+    body { font-family: Arial, sans-serif; background:#f8fafc; color:#111827; padding:24px; }
+    table { border-collapse: collapse; width:100%; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 4px 10px rgba(0,0,0,0.05); }
+    th, td { padding:10px 14px; border-bottom:1px solid #e5e7eb; text-align:left; }
+    th { background:#f1f5f9; cursor:pointer; }
+    tr:nth-child(even){background:#f9fafb;}
+    input { margin-bottom:12px; padding:8px; width:300px; border:1px solid #ddd; border-radius:6px; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="card">
-      <h1>Price table</h1>
-
-      <div class="controls">
-        <input id="q" type="search" placeholder="Szukaj po nazwie (ItemName)..." />
-        <button id="refresh">Odśwież</button>
-        <button id="export">Eksport CSV</button>
-        <div class="muted" style="margin-left:auto" id="status">Ładowanie...</div>
-      </div>
-
-      <div class="table-wrap" id="tableWrap">
-        <table id="priceTable" aria-describedby="status">
-          <thead>
-            <tr>
-              <th data-key="itemName" class="sortable">ItemName ▲▼</th>
-              <th data-key="youpin898Price" class="sortable" style="text-align:right">youpin898Price ▲▼</th>
-              <th data-key="buffPrice" class="sortable" style="text-align:right">buffPrice ▲▼</th>
-              <th data-key="csfloatPrice" class="sortable" style="text-align:right">csfloatPrice ▲▼</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-
-      <div class="note">
-        Źródło: <a id="srcLink" href="./mergedPriceList.json" target="_blank" rel="noopener">./mergedPriceList.json</a>
-      </div>
-    </div>
-  </div>
+  <h1>CS:GO Prices</h1>
+  <input type="search" id="search" placeholder="Szukaj przedmiotu..." />
+  <table id="table">
+    <thead>
+      <tr>
+        <th data-key="itemName">ItemName</th>
+        <th data-key="youpin898Price">youpin898Price</th>
+        <th data-key="buffPrice">buffPrice</th>
+        <th data-key="csfloatPrice">csfloatPrice</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
 
   <script>
-  (function(){
-    // RELATIVE PATH -> działa poprawnie gdy pliki są na tej samej stronie GH Pages
-    const URL = './mergedPriceList.json';
-    const statusEl = document.getElementById('status');
-    const tbody = document.querySelector('#priceTable tbody');
-    const qInput = document.getElementById('q');
-    const refreshBtn = document.getElementById('refresh');
-    const exportBtn = document.getElementById('export');
-    const headers = document.querySelectorAll('thead th.sortable');
-
-    let rawItems = []; // normalized array
-    let sortState = { key: 'itemName', dir: 1 }; // 1 asc, -1 desc
+    const URL = 'mergedPriceList.json';
+    const tbody = document.querySelector('#table tbody');
+    const searchInput = document.getElementById('search');
+    let items = [];
 
     async function load() {
-      status('Ładowanie...', 'loading');
-      try {
-        // cache-bust przy odświeżeniu (jeśli chcesz wymusić nową wersję)
-        const res = await fetch(URL + '?t=' + Date.now(), { cache: 'no-store' });
-        if (!res.ok) throw new Error('HTTP ' + res.status + ' — ' + res.statusText);
-        const json = await res.json();
-        rawItems = normalizeJson(json);
-        status('Załadowano ' + rawItems.length + ' pozycji');
-        render();
-      } catch (err) {
-        status('Błąd: ' + (err && err.message ? err.message : String(err)), 'error');
-        tbody.innerHTML = '<tr><td class="empty" colspan="4">Nie udało się pobrać danych.</td></tr>';
-      }
-    }
-
-    function normalizeJson(json) {
-      const arr = [];
-      if (Array.isArray(json)) {
-        for (const e of json) arr.push(normalizeEntry(e));
-      } else if (json && typeof json === 'object') {
-        const keys = Object.keys(json);
-        if (keys.length && keys.every(k => typeof json[k] === 'object')) {
-          for (const k of keys) arr.push(normalizeEntry(Object.assign({ itemName: k }, json[k])));
-        } else {
-          arr.push(normalizeEntry(json));
-        }
-      }
-      return arr;
-    }
-
-    function normalizeEntry(entry) {
-      function get(obj, ...keys) {
-        for (const k of keys) {
-          if (obj && typeof obj === 'object' && k in obj && obj[k] != null) return obj[k];
-        }
-        return undefined;
-      }
-      const itemName = entry.itemName || entry.name || entry.ItemName || entry.item_name || entry.key || entry.id || '(no name)';
-
-      const youpin898Price = get(entry, 'youpin898Price', 'youpin898_price', 'youpin898', 'youpin');
-      const buffPrice = get(entry, 'buffPrice', 'buff_price', 'buff');
-      const csfloatPrice = get(entry, 'csfloatPrice', 'csfloat_price', 'csfloat');
-
-      function extractNumber(v) {
-        if (v == null) return undefined;
-        if (typeof v === 'number') return v;
-        if (typeof v === 'string') {
-          const n = Number(v.replace(/[^0-9.\\-]/g, ''));
-          return Number.isFinite(n) ? n : undefined;
-        }
-        if (typeof v === 'object') return extractNumber(v.price ?? v.value ?? v.p ?? v.v);
-        return undefined;
-      }
-
-      return {
-        itemName: String(itemName),
-        youpin898Price: extractNumber(youpin898Price),
-        buffPrice: extractNumber(buffPrice),
-        csfloatPrice: extractNumber(csfloatPrice),
-        raw: entry
-      };
+      const res = await fetch(URL + '?t=' + Date.now());
+      items = await res.json();
+      render();
     }
 
     function render() {
-      const q = (qInput.value || '').trim().toLowerCase();
-      let list = rawItems.slice();
-
-      if (q) {
-        list = list.filter(it => it.itemName.toLowerCase().includes(q));
-      }
-
-      const key = sortState.key;
-      const dir = sortState.dir;
-      list.sort((a,b) => {
-        const A = a[key], B = b[key];
-        if (typeof A === 'number' && typeof B === 'number') return dir * (A - B);
-        if (typeof A === 'number') return -dir * 1;
-        if (typeof B === 'number') return dir * 1;
-        const sa = (A==null?'':String(A)).toLowerCase();
-        const sb = (B==null?'':String(B)).toLowerCase();
-        return dir * sa.localeCompare(sb);
-      });
-
-      if (list.length === 0) {
-        tbody.innerHTML = '<tr><td class="empty" colspan="4">Brak wyników.</td></tr>';
-        return;
-      }
-
-      const rows = list.map(it => {
-        return `<tr>
-          <td>${escapeHtml(it.itemName)}</td>
-          <td class="right">${formatPrice(it.youpin898Price)}</td>
-          <td class="right">${formatPrice(it.buffPrice)}</td>
-          <td class="right">${formatPrice(it.csfloatPrice)}</td>
-        </tr>`;
-      }).join('');
-      tbody.innerHTML = rows;
+      const q = searchInput.value.toLowerCase();
+      const filtered = items.filter(it => it.itemName.toLowerCase().includes(q));
+      tbody.innerHTML = filtered.map(it => `
+        <tr>
+          <td>${it.itemName}</td>
+          <td>${it.youpin898Price ?? '-'}</td>
+          <td>${it.buffPrice ?? '-'}</td>
+          <td>${it.csfloatPrice ?? '-'}</td>
+        </tr>
+      `).join('');
     }
 
-    function formatPrice(p) {
-      if (p == null || isNaN(p)) return '-';
-      return Number(p).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-
-    function escapeHtml(s){
-      return String(s)
-        .replace(/&/g,'&amp;')
-        .replace(/</g,'&lt;')
-        .replace(/>/g,'&gt;')
-        .replace(/"/g,'&quot;')
-        .replace(/'/g,'&#039;');
-    }
-
-    headers.forEach(h => {
-      h.addEventListener('click', () => {
-        const key = h.dataset.key;
-        if (sortState.key === key) sortState.dir = -sortState.dir;
-        else { sortState.key = key; sortState.dir = 1; }
-        render();
-      });
-    });
-
-    qInput.addEventListener('input', debounce(render, 160));
-    refreshBtn.addEventListener('click', load);
-    exportBtn.addEventListener('click', () => {
-      const q = (qInput.value || '').trim().toLowerCase();
-      let list = rawItems.slice();
-      if (q) list = list.filter(it => it.itemName.toLowerCase().includes(q));
-      list.sort((a,b) => {
-        const A = a[sortState.key], B = b[sortState.key];
-        if (typeof A === 'number' && typeof B === 'number') return sortState.dir * (A - B);
-        if (typeof A === 'number') return -sortState.dir * 1;
-        if (typeof B === 'number') return sortState.dir * 1;
-        return sortState.dir * String(A).localeCompare(String(B));
-      });
-      downloadCSV(list);
-    });
-
-    function downloadCSV(list){
-      const header = ['ItemName','youpin898Price','buffPrice','csfloatPrice'];
-      const rows = list.map(it => [
-        csvEscape(it.itemName),
-        it.youpin898Price == null ? '' : Number(it.youpin898Price).toFixed(2),
-        it.buffPrice == null ? '' : Number(it.buffPrice).toFixed(2),
-        it.csfloatPrice == null ? '' : Number(it.csfloatPrice).toFixed(2)
-      ]);
-      const csv = [header, ...rows].map(r => r.join(',')).join('\\n');
-      const blob = new Blob([csv], {type: 'text/csv;charset=utf-8;'});
-      const url = URL_createObjectURLSafe(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'prices_export.csv';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(()=> { try{ URL.revokeObjectURL(url); }catch(e){} }, 5000);
-    }
-
-    function csvEscape(s){
-      if (s == null) return '';
-      s = String(s);
-      if (s.includes('"') || s.includes(',') || s.includes('\\n')) {
-        return '"' + s.replace(/"/g, '""') + '"';
-      }
-      return s;
-    }
-
-    function URL_createObjectURLSafe(blob){
-      return (window.URL || window.webkitURL).createObjectURL(blob);
-    }
-
-    function status(text, kind='') {
-      statusEl.textContent = text;
-      statusEl.className = kind === 'error' ? 'error' : (kind === 'loading' ? 'loading' : 'small');
-    }
-    function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t = setTimeout(()=>fn(...a), ms); }; }
-
+    searchInput.addEventListener('input', render);
     load();
-    window.__priceTable = { render, rawItems };
-  })();
   </script>
 </body>
 </html>
