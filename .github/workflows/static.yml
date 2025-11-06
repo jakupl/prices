@@ -1,4 +1,4 @@
-name: Build and publish mergedPriceList
+name: Build and publish mergedPriceList (diagnostic + pages deploy)
 
 permissions:
   contents: read
@@ -7,12 +7,17 @@ permissions:
 
 on:
   schedule:
-   - cron: '0 * * * *'
+    - cron: '0 * * * *'
   workflow_dispatch: {}
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
+    # <-- tu dodajemy environment wymagane przez actions/deploy-pages
+    environment:
+      name: github-pages
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -24,14 +29,22 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Install dependencies (optional)
-        run: |
-          if [ -f package.json ]; then npm ci; fi
-
-      - name: Run mergePrices
+      - name: Run mergePrices (create public/mergedPriceList.json)
         env:
           SKINS_API_KEY: ${{ secrets.SKINS_API_KEY }}
-        run: node mergePrices.mjs
+        run: |
+          set -e
+          echo "Uruchamiam mergePrices.mjs"
+          node mergePrices.mjs
+          echo "Listing public/:"
+          ls -la public || true
+          if [ -f public/mergedPriceList.json ]; then
+            echo "FOUND mergedPriceList.json"
+            wc -c public/mergedPriceList.json
+          else
+            echo "::error ::Brak public/mergedPriceList.json — przerywam workflow"
+            exit 2
+          fi
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
