@@ -7,7 +7,6 @@
   <style>
     :root{
       --bg:#f8fafc; --card:#fff; --muted:#6b7280; --accent:#0f172a;
-      --success:#10b981;
     }
     html,body{height:100%}
     body{
@@ -64,14 +63,15 @@
       </div>
 
       <div class="note">
-        Źródło: <a href="https://jakupl.github.io/prices/mergedPriceList.json" target="_blank" rel="noopener">https://jakupl.github.io/prices/mergedPriceList.json</a>
+        Źródło: <a id="srcLink" href="./mergedPriceList.json" target="_blank" rel="noopener">./mergedPriceList.json</a>
       </div>
     </div>
   </div>
 
   <script>
   (function(){
-    const URL = 'https://jakupl.github.io/prices/mergedPriceList.json';
+    // RELATIVE PATH -> działa poprawnie gdy pliki są na tej samej stronie GH Pages
+    const URL = './mergedPriceList.json';
     const statusEl = document.getElementById('status');
     const tbody = document.querySelector('#priceTable tbody');
     const qInput = document.getElementById('q');
@@ -82,11 +82,11 @@
     let rawItems = []; // normalized array
     let sortState = { key: 'itemName', dir: 1 }; // 1 asc, -1 desc
 
-    // --- Fetch & normalize ---
     async function load() {
       status('Ładowanie...', 'loading');
       try {
-        const res = await fetch(URL, { cache: 'no-store' });
+        // cache-bust przy odświeżeniu (jeśli chcesz wymusić nową wersję)
+        const res = await fetch(URL + '?t=' + Date.now(), { cache: 'no-store' });
         if (!res.ok) throw new Error('HTTP ' + res.status + ' — ' + res.statusText);
         const json = await res.json();
         rawItems = normalizeJson(json);
@@ -99,17 +99,14 @@
     }
 
     function normalizeJson(json) {
-      // Output: [{ itemName, youpin898Price, buffPrice, csfloatPrice, raw }]
       const arr = [];
       if (Array.isArray(json)) {
         for (const e of json) arr.push(normalizeEntry(e));
       } else if (json && typeof json === 'object') {
         const keys = Object.keys(json);
-        // If object is already a map of itemName -> data
         if (keys.length && keys.every(k => typeof json[k] === 'object')) {
           for (const k of keys) arr.push(normalizeEntry(Object.assign({ itemName: k }, json[k])));
         } else {
-          // Fallback: treat top-level object as single entry
           arr.push(normalizeEntry(json));
         }
       }
@@ -149,7 +146,6 @@
       };
     }
 
-    // --- Rendering ---
     function render() {
       const q = (qInput.value || '').trim().toLowerCase();
       let list = rawItems.slice();
@@ -158,16 +154,13 @@
         list = list.filter(it => it.itemName.toLowerCase().includes(q));
       }
 
-      // sort
       const key = sortState.key;
       const dir = sortState.dir;
       list.sort((a,b) => {
         const A = a[key], B = b[key];
-        // if both numbers or both undefined
         if (typeof A === 'number' && typeof B === 'number') return dir * (A - B);
-        if (typeof A === 'number') return -dir * 1; // numbers first
+        if (typeof A === 'number') return -dir * 1;
         if (typeof B === 'number') return dir * 1;
-        // string compare
         const sa = (A==null?'':String(A)).toLowerCase();
         const sb = (B==null?'':String(B)).toLowerCase();
         return dir * sa.localeCompare(sb);
@@ -191,7 +184,6 @@
 
     function formatPrice(p) {
       if (p == null || isNaN(p)) return '-';
-      // localized with 2 decimals
       return Number(p).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
@@ -204,25 +196,21 @@
         .replace(/'/g,'&#039;');
     }
 
-    // --- Sorting UI ---
     headers.forEach(h => {
       h.addEventListener('click', () => {
         const key = h.dataset.key;
         if (sortState.key === key) sortState.dir = -sortState.dir;
         else { sortState.key = key; sortState.dir = 1; }
-        // visual: simple (no arrow change), re-render
         render();
       });
     });
 
-    // --- Search & controls ---
     qInput.addEventListener('input', debounce(render, 160));
     refreshBtn.addEventListener('click', load);
     exportBtn.addEventListener('click', () => {
       const q = (qInput.value || '').trim().toLowerCase();
       let list = rawItems.slice();
       if (q) list = list.filter(it => it.itemName.toLowerCase().includes(q));
-      // apply sort
       list.sort((a,b) => {
         const A = a[sortState.key], B = b[sortState.key];
         if (typeof A === 'number' && typeof B === 'number') return sortState.dir * (A - B);
@@ -250,7 +238,6 @@
       document.body.appendChild(a);
       a.click();
       a.remove();
-      // revoke after a bit
       setTimeout(()=> { try{ URL.revokeObjectURL(url); }catch(e){} }, 5000);
     }
 
@@ -263,22 +250,17 @@
       return s;
     }
 
-    // safe URL.createObjectURL wrapper for older browsers
     function URL_createObjectURLSafe(blob){
       return (window.URL || window.webkitURL).createObjectURL(blob);
     }
 
-    // --- Utilities ---
     function status(text, kind='') {
       statusEl.textContent = text;
       statusEl.className = kind === 'error' ? 'error' : (kind === 'loading' ? 'loading' : 'small');
     }
     function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t = setTimeout(()=>fn(...a), ms); }; }
 
-    // initial load
     load();
-
-    // Helpful: expose render() for console debugging (optional)
     window.__priceTable = { render, rawItems };
   })();
   </script>
