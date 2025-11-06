@@ -14,7 +14,6 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
-    # <-- tu dodajemy environment wymagane przez actions/deploy-pages
     environment:
       name: github-pages
 
