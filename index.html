@@ -3,76 +3,72 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Lista cen</title>
+  <title>Lista cen — tabela</title>
   <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial; padding:20px; background:#f7f8fa; color:#111}
-    h1{font-size:1.4rem; margin-bottom:0.5rem}
-    .notice{margin:1rem 0; padding:0.6rem 0.8rem; border-radius:8px; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,0.04)}
-    table{width:100%; border-collapse:collapse; margin-top:1rem; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,0.03)}
-    th,td{padding:0.65rem 0.8rem; border-bottom:1px solid #eee; text-align:left; font-size:0.95rem}
-    th{background:#fafafa; font-weight:600; position:sticky; top:0}
-    tbody tr:hover{background:#fbfbff}
-    .error{color:#8a1f1f; background:#fff1f1; border-left:4px solid #f1a; padding:0.6rem; border-radius:6px; margin-top:1rem}
-    .small{font-size:0.85rem; color:#666}
-    #reload{margin-left:0.5rem}
-    .center{display:flex; gap:8px; align-items:center}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; padding:20px; background:#f6f7fb; color:#111}
+    h1{margin:0 0 8px}
+    .meta{font-size:0.9rem; color:#555}
+    .notice{margin-top:10px;padding:10px;background:#fff;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04)}
+    .error{color:#8a1f1f;background:#fff1f1;border-left:4px solid #f1a;padding:8px;border-radius:6px;margin-top:12px}
+    table{width:100%;border-collapse:collapse;margin-top:12px;background:#fff}
+    th,td{padding:8px;border-bottom:1px solid #eee;text-align:left;font-size:0.95rem}
+    th{background:#fafafa;position:sticky;top:0}
+    #reload{margin-left:8px}
+    .small{font-size:0.85rem;color:#666}
   </style>
 </head>
 <body>
   <h1>Lista cen</h1>
+  <div class="meta">Źródło: <code>mergedPriceList.json</code></div>
 
   <div class="notice">
-    <div class="center">
-      <div class="small">Dane pobierane z <code>./mergedPriceList.json</code></div>
-      <button id="reload">Odśwież</button>
+    <div class="small">Spróbuję pobrać JSON z (1) <code>./mergedPriceList.json</code>, a jeśli to się nie uda z (2) pełnego URL.</div>
+    <div style="margin-top:8px">
+      <button id="reload">Pobierz ponownie</button>
+      <span id="status" class="small" style="margin-left:12px">—</span>
     </div>
   </div>
 
-  <div id="status" class="small">Ładowanie…</div>
-  <div id="tableWrap" style="margin-top:12px"></div>
+  <div id="tableWrap"></div>
 
   <script>
-    async function buildTable(data) {
+    const ABS_URL = 'https://jakupl.github.io/prices/mergedPriceList.json';
+
+    function showStatus(msg, isError = false) {
+      const s = document.getElementById('status');
+      s.textContent = msg;
+      s.style.color = isError ? 'crimson' : '';
+    }
+
+    function makeTable(data) {
       const wrap = document.getElementById('tableWrap');
       wrap.innerHTML = '';
-      if (!data) {
-        wrap.innerHTML = '<div class="error">Brak danych do wyświetlenia.</div>';
-        return;
-      }
+      if (!data) { wrap.innerHTML = '<div class="error">Brak danych.</div>'; return; }
 
-      // Jeśli top-level to obiekt z kluczem listy, spróbuj odczytać
+      // Jeśli obiekt zawiera listę jako pole, spróbuj znaleźć ją
       if (!Array.isArray(data)) {
-        // znajdź pierwsze pole będące tablicą obiektów
         for (const k of Object.keys(data)) {
           if (Array.isArray(data[k])) { data = data[k]; break; }
         }
       }
 
       if (!Array.isArray(data) || data.length === 0) {
-        wrap.innerHTML = '<div class="error">Dane są puste lub nie są listą obiektów.</div>';
+        wrap.innerHTML = '<div class="error">Dane nie są tablicą obiektów lub są puste.</div>';
         return;
       }
 
-      // Kolumny: zsumuj klucze z pierwszych kilkunastu elementów
       const keySet = new Set();
-      for (let i=0; i< Math.min(30, data.length); i++) {
-        const item = data[i];
-        if (item && typeof item === 'object') {
-          Object.keys(item).forEach(k => keySet.add(k));
-        }
+      for (let i=0;i<Math.min(50,data.length);i++){
+        const it = data[i];
+        if (it && typeof it === 'object') Object.keys(it).forEach(k=>keySet.add(k));
       }
       const cols = Array.from(keySet);
 
-      // Tworzenie tabeli
       const table = document.createElement('table');
       const thead = document.createElement('thead');
-      const trh = document.createElement('tr');
-      cols.forEach(c => {
-        const th = document.createElement('th');
-        th.textContent = c;
-        trh.appendChild(th);
-      });
-      thead.appendChild(trh);
+      const headRow = document.createElement('tr');
+      cols.forEach(c => { const th = document.createElement('th'); th.textContent = c; headRow.appendChild(th); });
+      thead.appendChild(headRow);
       table.appendChild(thead);
 
       const tbody = document.createElement('tbody');
@@ -82,7 +78,6 @@
           const td = document.createElement('td');
           let v = row == null ? '' : row[c];
           if (v === null || typeof v === 'undefined') v = '';
-          // ładne formatowanie obiektów/arrayów
           if (typeof v === 'object') v = JSON.stringify(v);
           td.textContent = v;
           tr.appendChild(td);
@@ -93,30 +88,45 @@
       wrap.appendChild(table);
     }
 
-    async function loadAndRender() {
-      const status = document.getElementById('status');
-      status.textContent = 'Pobieram ./mergedPriceList.json ...';
+    async function fetchJson(url) {
+      const resp = await fetch(url, {cache: 'no-cache'});
+      if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
+      return await resp.json();
+    }
+
+    async function load() {
+      showStatus('Próba: ./mergedPriceList.json ...');
       try {
-        const resp = await fetch('./mergedPriceList.json', {cache: "no-cache"});
-        if (!resp.ok) {
-          throw new Error('HTTP ' + resp.status + ' ' + resp.statusText);
+        const data = await fetchJson('./mergedPriceList.json');
+        showStatus('Sukces: pobrano ./mergedPriceList.json');
+        makeTable(data);
+        return;
+      } catch (err1) {
+        console.warn('Względna ścieżka nie zadziałała:', err1);
+        showStatus('Nie udało się pobrać ./mergedPriceList.json — próbuję pełny URL ...');
+      }
+
+      try {
+        const data2 = await fetchJson(ABS_URL);
+        showStatus('Sukces: pobrano z pełnego URL.');
+        makeTable(data2);
+      } catch (err2) {
+        console.error('Pełny URL też nie zadziałał:', err2);
+        // Rozpoznawanie najczęstszych komunikatów
+        let msg = String(err2);
+        if (msg.includes('Failed to fetch') || msg.includes('TypeError')) {
+          msg = 'Błąd sieciowy (może CORS lub brak dostępu). Sprawdź Console/Network w DevTools.';
         }
-        const json = await resp.json();
-        status.textContent = 'Dane załadowane. Pokazuję tabelę.';
-        await buildTable(json);
-      } catch (err) {
-        status.innerHTML = `<div class="error">Błąd podczas wczytywania danych: ${String(err)}</div>
-          <div class="small">Sprawdź w konsoli (F12) szczegóły.</div>`;
-        console.error(err);
+        showStatus('Błąd: ' + msg, true);
+        document.getElementById('tableWrap').innerHTML =
+          '<div class="error">Nie udało się pobrać pliku JSON. Sprawdź Console (F12) → Network oraz komunikaty CORS.</div>';
       }
     }
 
-    document.getElementById('reload').addEventListener('click', () => {
-      loadAndRender();
-    });
+    document.getElementById('reload').addEventListener('click', load);
 
     // uruchom od razu
-    loadAndRender();
+    load();
   </script>
 </body>
 </html>
