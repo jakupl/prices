@@ -30,7 +30,6 @@ async function safeFetchJson(url, attempts = 3, timeoutMs = 15000) {
       const last = i === attempts - 1;
       console.warn(`Fetch ${url} failed (attempt ${i+1}/${attempts}): ${err.message}${last ? " -> final" : ""}`);
       if (i === attempts - 1) throw err;
-      // small backoff
       await new Promise(r => setTimeout(r, 500 * (i + 1)));
     }
   }
