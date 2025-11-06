@@ -1,53 +1,38 @@
-name: Build and publish mergedPriceList (official Pages flow)
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
+name: Generate mergedPriceList.json
 on:
+  push:
+    paths:
+      - 'mergePrices.mjs'
+      - '.github/workflows/generate-merged-price.yml'
   schedule:
-    - cron: '0 * * * *'
-  workflow_dispatch: {}
+    - cron: '0 * * * *' # 
 
 jobs:
-  build-and-deploy:
+  generate:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          persist-credentials: true
 
-      - name: Setup Node.js
+      - name: Use Node
         uses: actions/setup-node@v4
         with:
           node-version: '18'
 
-      - name: Run mergePrices (create public/mergedPriceList.json)
-        env:
-          SKINS_API_KEY: ${{ secrets.SKINS_API_KEY }}
+      - name: Install (if you have deps)
         run: |
-          set -e
-          echo ">>> Uruchamiam mergePrices.mjs"
-          node mergePrices.mjs
-          echo ">>> Zawartość katalogu public/:"
-          ls -la public || true
-          echo ">>> Rozmiar i początek pliku:"
-          wc -c public/mergedPriceList.json || true
-          head -n 120 public/mergedPriceList.json || true
+          if [ -f package.json ]; then npm ci; fi
 
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
+      - name: Run merge script (stdout -> mergedPriceList.json)
+        # Jeśli mergePrices.mjs zapisuje plik sam — usuń przekierowanie > mergedPriceList.json
+        run: node mergePrices.mjs > mergedPriceList.json
 
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v4
+      - name: Commit generated file
+        uses: EndBug/add-and-commit@v9
         with:
-          path: ./public
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          author_name: github-actions
+          author_email: github-actions@github.com
+          message: "chore: update mergedPriceList.json (generated)"
+          add: 'mergedPriceList.json'
