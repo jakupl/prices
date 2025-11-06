@@ -1,4 +1,3 @@
-// mergePrices.mjs
 import fs from "fs";
 
 const API_KEY = process.env.SKINS_API_KEY;
@@ -75,7 +74,6 @@ async function mergeAndSave() {
   const transformed = { items: {} };
 
   for (const name of allNames) {
-    // we'll collect candidates then pick lowest
     const candidates = [];
 
     for (const r of results) {
@@ -89,7 +87,6 @@ async function mergeAndSave() {
       if (!Number.isFinite(stock) || stock < STOCK_THRESHOLD || !Number.isFinite(price)) continue;
 
       let finalPrice = price;
-      // convert from CNY to USD for buff and youpin (same behavior as original)
       if (r.key === "buff" || r.key === "youpin") finalPrice = price / CNY_TO_USD;
 
       if (!Number.isFinite(finalPrice)) continue;
@@ -99,7 +96,6 @@ async function mergeAndSave() {
 
     if (candidates.length === 0) continue;
 
-    // pick the lowest price; deterministic tie-breaker: prefer csfloat, then buff, then youpin
     candidates.sort((a, b) => {
       if (a.price !== b.price) return a.price - b.price;
       const pref = { csfloat: 0, buff: 1, youpin: 2 };
@@ -107,7 +103,6 @@ async function mergeAndSave() {
     });
 
     const best = candidates[0];
-    // round to 2 decimals
     const rounded = Math.round(best.price * 100) / 100;
     transformed.items[name] = { price: rounded, site: best.site };
   }
