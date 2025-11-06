@@ -1,3 +1,4 @@
+// mergePrices.mjs
 import fs from "fs";
 
 const API_KEY = process.env.SKINS_API_KEY;
@@ -29,7 +30,7 @@ async function safeFetchJson(url, attempts = 3, timeoutMs = 15000) {
     } catch (err) {
       const last = i === attempts - 1;
       console.warn(`Fetch ${url} failed (attempt ${i+1}/${attempts}): ${err.message}${last ? " -> final" : ""}`);
-      if (i === attempts - 1) throw err;
+      if (last) throw err;
       await new Promise(r => setTimeout(r, 500 * (i + 1)));
     }
   }
@@ -41,11 +42,8 @@ function parsePrice(val) {
   let s = String(val).trim();
   if (s === "") return NaN;
   s = s.replace(/[^\d\.,-]/g, "");
-  if (s.indexOf(",") !== -1 && s.indexOf(".") !== -1) {
-    s = s.replace(/,/g, "");
-  } else {
-    s = s.replace(/,/g, ".");
-  }
+  if (s.indexOf(",") !== -1 && s.indexOf(".") !== -1) s = s.replace(/,/g, "");
+  else s = s.replace(/,/g, ".");
   const n = parseFloat(s);
   return Number.isFinite(n) ? n : NaN;
 }
@@ -80,12 +78,11 @@ async function mergeAndSave() {
     for (const r of results) {
       const values = r.items[name];
       if (!values) continue;
-      const rawPrice = values.p ?? values.price ?? values.price_cny ?? values.value ?? null;
-      const rawStock = values.c ?? values.count ?? values.stock ?? values.quantity ?? null;
+      const rawPrice = values.p ?? values.price ?? null;
+      const rawStock = values.c ?? values.count ?? values.stock ?? null;
 
       const price = parsePrice(rawPrice);
       const stock = Number(rawStock);
-      // validate
       if (!Number.isFinite(stock) || stock < STOCK_THRESHOLD || !Number.isFinite(price)) continue;
 
       let finalPrice = price;
