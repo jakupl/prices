@@ -86,7 +86,7 @@ async function mergeAndSave() {
       if (!Number.isFinite(stock) || stock < STOCK_THRESHOLD || !Number.isFinite(price)) continue;
 
       let finalPrice = price;
-      if (r.key === "buffPrice" || r.key === "youpin898Price") finalPrice = +(price / CNY_TO_USD).toFixed(3);
+      if (r.key === "buffPrice" || r.key === "youpin898Price") finalPrice = +(price / CNY_TO_USD).toFixed(2);
 
       entry[r.key] = finalPrice;
     }
