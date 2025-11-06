@@ -7,7 +7,7 @@ permissions:
 
 on:
   schedule:
-    - cron: '0 * * * *'    # co godzinę
+    - cron: '0 * * * *'
   workflow_dispatch: {}
 
 jobs:
@@ -36,12 +36,9 @@ jobs:
           node mergePrices.mjs
           echo ">>> Zawartość katalogu public/:"
           ls -la public || true
-          if [ ! -f public/mergedPriceList.json ]; then
-            echo "::error ::public/mergedPriceList.json missing"; exit 2;
-          fi
-          if [ ! -f public/index.html ]; then
-            echo "::warning ::public/index.html missing — site root will 404 unless index.html is present"
-          fi
+          echo ">>> Rozmiar i początek pliku:"
+          wc -c public/mergedPriceList.json || true
+          head -n 120 public/mergedPriceList.json || true
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
