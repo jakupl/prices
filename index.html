@@ -3,145 +3,119 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Prices </title>
+  <title>Lista cen</title>
   <style>
-    body{
-      font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
-      margin: 24px;
-      color:#111827;
-      background: #f8fafc;
-    }
-    h1 { font-size: 1.5rem; margin-bottom: 8px; }
-    p.lead { margin-top:0; color:#374151; margin-bottom:18px; }
-
-    .toolbar { display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
-    .search {
-      padding:8px 10px; border-radius:8px; border:1px solid #d1d5db; background:white;
-      min-width:220px;
-    }
-    .meta { font-size:0.9rem; color:#6b7280; }
-
-    .table-wrap { overflow:auto; background:white; border-radius:10px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
-    table {
-      width:100%; border-collapse:collapse; min-width:720px;
-    }
-    th, td {
-      padding:10px 12px; text-align:left; border-bottom:1px solid #eef2f7;
-      font-size:0.95rem;
-    }
-    thead th {
-      background: linear-gradient(180deg,#fff,#fbfdff);
-      position: sticky; top:0; z-index:1; backdrop-filter: blur(2px);
-    }
-    tbody tr:hover { background:#f8fafc; }
-    .muted { color:#6b7280; font-size:0.9rem; }
-    .num { font-variant-numeric: tabular-nums; white-space:nowrap; }
-    .right { text-align:right; }
-
-    @media (max-width:760px){
-      th, td { padding:8px; font-size:0.88rem; }
-      .search { min-width:140px; }
-    }
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial; padding:20px; background:#f7f8fa; color:#111}
+    h1{font-size:1.4rem; margin-bottom:0.5rem}
+    .notice{margin:1rem 0; padding:0.6rem 0.8rem; border-radius:8px; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,0.04)}
+    table{width:100%; border-collapse:collapse; margin-top:1rem; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,0.03)}
+    th,td{padding:0.65rem 0.8rem; border-bottom:1px solid #eee; text-align:left; font-size:0.95rem}
+    th{background:#fafafa; font-weight:600; position:sticky; top:0}
+    tbody tr:hover{background:#fbfbff}
+    .error{color:#8a1f1f; background:#fff1f1; border-left:4px solid #f1a; padding:0.6rem; border-radius:6px; margin-top:1rem}
+    .small{font-size:0.85rem; color:#666}
+    #reload{margin-left:0.5rem}
+    .center{display:flex; gap:8px; align-items:center}
   </style>
 </head>
 <body>
-  <h1>Price List</h1>
-  <p class="lead">.<code>mergedPriceList.json</code>youpin buff csfloat spreadsheet.</p>
+  <h1>Lista cen</h1>
 
-  <div class="toolbar">
-    <input id="q" class="search" placeholder="Szukaj nazwy przedmiotu..." />
-    <div class="meta"><span id="count">—</span></div>
-    <div style="flex:1"></div>
-    <a id="raw-link" href="./mergedPriceList.json" target="_blank" class="meta">download JSON</a>
+  <div class="notice">
+    <div class="center">
+      <div class="small">Dane pobierane z <code>./mergedPriceList.json</code></div>
+      <button id="reload">Odśwież</button>
+    </div>
   </div>
 
-  <div class="table-wrap" id="table-wrap">
-    <table id="prices-table" aria-live="polite">
-      <thead>
-        <tr>
-          <th style="width:55%">Item name</th>
-          <th style="width:15%">Youpin Price</th>
-          <th style="width:15%">Buff Price</th>
-          <th style="width:15%">Csfloat price</th>
-        </tr>
-      </thead>
-      <tbody id="tbody">
-        <tr><td class="muted" colspan="4">fetching data</td></tr>
-      </tbody>
-    </table>
-  </div>
+  <div id="status" class="small">Ładowanie…</div>
+  <div id="tableWrap" style="margin-top:12px"></div>
 
   <script>
-    const el = (id) => document.getElementById(id);
-    const formatPrice = v => (v === null || v === undefined) ? '-' : (Number.isFinite(+v) ? (+v).toFixed(3) : '-');
-
-    async function loadAndRender() {
-      try {
-        const res = await fetch('./mergedPriceList.json', {cache: "no-cache"});
-        if(!res.ok) throw new Error('HTTP ' + res.status);
-        const json = await res.json();
-
-        const itemsObj = (json && json.items) ? json.items : {};
-        const names = Object.keys(itemsObj);
-
-        names.sort((a,b) => a.toLowerCase().localeCompare(b.toLowerCase()));
-
-        renderTable(names, itemsObj);
-      } catch(err) {
-        el('tbody').innerHTML = `<tr><td class="muted" colspan="4">Błąd: ${String(err)}</td></tr>`;
-        el('count').textContent = '0';
-      }
-    }
-
-    function renderTable(names, itemsObj) {
-      const tbody = el('tbody');
-      if(!names.length) {
-        tbody.innerHTML = '<tr><td class="muted" colspan="4">Brak danych.</td></tr>';
-        el('count').textContent = '0';
+    async function buildTable(data) {
+      const wrap = document.getElementById('tableWrap');
+      wrap.innerHTML = '';
+      if (!data) {
+        wrap.innerHTML = '<div class="error">Brak danych do wyświetlenia.</div>';
         return;
       }
 
-      const rows = names.map(name => {
-        const v = itemsObj[name] || {};
-        const y = ('youpin898Price' in v) ? v.youpin898Price : null;
-        const b = ('buffPrice' in v) ? v.buffPrice : null;
-        const c = ('csfloatPrice' in v) ? v.csfloatPrice : null;
-
-        return `<tr>
-          <td><code>${escapeHtml(name)}</code></td>
-          <td class="num">${formatPrice(y)}</td>
-          <td class="num">${formatPrice(b)}</td>
-          <td class="num">${formatPrice(c)}</td>
-        </tr>`;
-      }).join('\n');
-
-      tbody.innerHTML = rows;
-      el('count').textContent = names.length;
-    }
-
-    (function attachSearch(){
-      const q = el('q');
-      q.addEventListener('input', debounce(() => {
-        const needle = q.value.trim().toLowerCase();
-        const rows = Array.from(el('tbody').querySelectorAll('tr'));
-        if(!needle) {
-          rows.forEach(r => r.style.display = '');
-          return;
+      // Jeśli top-level to obiekt z kluczem listy, spróbuj odczytać
+      if (!Array.isArray(data)) {
+        // znajdź pierwsze pole będące tablicą obiektów
+        for (const k of Object.keys(data)) {
+          if (Array.isArray(data[k])) { data = data[k]; break; }
         }
-        rows.forEach(r => {
-          const nameCell = r.children[0];
-          const nameText = nameCell ? nameCell.textContent.toLowerCase() : '';
-          r.style.display = nameText.includes(needle) ? '' : 'none';
+      }
+
+      if (!Array.isArray(data) || data.length === 0) {
+        wrap.innerHTML = '<div class="error">Dane są puste lub nie są listą obiektów.</div>';
+        return;
+      }
+
+      // Kolumny: zsumuj klucze z pierwszych kilkunastu elementów
+      const keySet = new Set();
+      for (let i=0; i< Math.min(30, data.length); i++) {
+        const item = data[i];
+        if (item && typeof item === 'object') {
+          Object.keys(item).forEach(k => keySet.add(k));
+        }
+      }
+      const cols = Array.from(keySet);
+
+      // Tworzenie tabeli
+      const table = document.createElement('table');
+      const thead = document.createElement('thead');
+      const trh = document.createElement('tr');
+      cols.forEach(c => {
+        const th = document.createElement('th');
+        th.textContent = c;
+        trh.appendChild(th);
+      });
+      thead.appendChild(trh);
+      table.appendChild(thead);
+
+      const tbody = document.createElement('tbody');
+      data.forEach(row => {
+        const tr = document.createElement('tr');
+        cols.forEach(c => {
+          const td = document.createElement('td');
+          let v = row == null ? '' : row[c];
+          if (v === null || typeof v === 'undefined') v = '';
+          // ładne formatowanie obiektów/arrayów
+          if (typeof v === 'object') v = JSON.stringify(v);
+          td.textContent = v;
+          tr.appendChild(td);
         });
-      }, 200));
-    })();
-
-    function debounce(fn, t=150){ let tm; return (...a)=>{ clearTimeout(tm); tm=setTimeout(()=>fn(...a), t); }; }
-
-    function escapeHtml(s){
-      return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      wrap.appendChild(table);
     }
 
+    async function loadAndRender() {
+      const status = document.getElementById('status');
+      status.textContent = 'Pobieram ./mergedPriceList.json ...';
+      try {
+        const resp = await fetch('./mergedPriceList.json', {cache: "no-cache"});
+        if (!resp.ok) {
+          throw new Error('HTTP ' + resp.status + ' ' + resp.statusText);
+        }
+        const json = await resp.json();
+        status.textContent = 'Dane załadowane. Pokazuję tabelę.';
+        await buildTable(json);
+      } catch (err) {
+        status.innerHTML = `<div class="error">Błąd podczas wczytywania danych: ${String(err)}</div>
+          <div class="small">Sprawdź w konsoli (F12) szczegóły.</div>`;
+        console.error(err);
+      }
+    }
+
+    document.getElementById('reload').addEventListener('click', () => {
+      loadAndRender();
+    });
+
+    // uruchom od razu
     loadAndRender();
   </script>
 </body>
