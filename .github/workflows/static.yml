@@ -1,58 +1,44 @@
-name: Build and publish mergedPriceList (diagnostic + pages deploy)
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+name: merge-prices
 
 on:
   schedule:
- # - cron: '5 * * * *'
-  workflow_dispatch: {}
+    - cron: '30 * * * *'
+  workflow_dispatch:
+
 
 jobs:
-  build-and-deploy:
+  merge:
     runs-on: ubuntu-latest
 
-    environment:
-      name: github-pages
-
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          persist-credentials: true   # ważne, żeby GITHUB_TOKEN działał przy push
 
-      - name: Setup Node.js
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
 
-      - name: Run mergePrices (create public/mergedPriceList.json)
+      - name: Install dependencies (if any)
+        run: npm ci || true
+
+      - name: Run merge script
         env:
           SKINS_API_KEY: ${{ secrets.SKINS_API_KEY }}
+        run: node mergePrices.mjs
+
+      - name: Commit generated files (if changed)
         run: |
-          set -e
-          echo "Uruchamiam mergePrices.mjs"
-          node mergePrices.mjs
-          echo "Listing public/:"
-          ls -la public || true
-          if [ -f public/mergedPriceList.json ]; then
-            echo "FOUND mergedPriceList.json"
-            wc -c public/mergedPriceList.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/mergedPriceList.json public/lastYoupin.json || true
+          if ! git diff --staged --quiet; then
+            git commit -m "Update merged prices (auto)" || echo "nothing to commit"
+            git push origin HEAD:${{ github.ref_name }}
           else
-            echo "::error ::Brak public/mergedPriceList.json — przerywam workflow"
-            exit 2
+            echo "No changes to commit"
           fi
-
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v4
-        with:
-          path: ./public
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
