@@ -7,7 +7,7 @@ if (!API_KEY) {
 }
 
 const app = "730";
-const CNY_TO_USD = 7.13;
+const CNY_TO_USD = 1;
 const STOCK_THRESHOLD = 1;
 
 const YOUPIN_ALLOWED_HOURS = [4, 12, 20];
