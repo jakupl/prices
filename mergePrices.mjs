@@ -7,7 +7,7 @@ if (!API_KEY) {
 }
 
 const app = "730";
-const CNY_TO_USD = 1;
+const CNY_TO_USD = 7.10; // teraz tylko YOUPIN będzie dzielony przez tę wartość
 const STOCK_THRESHOLD = 1;
 
 const YOUPIN_ALLOWED_HOURS = [4, 12, 20];
@@ -265,7 +265,8 @@ async function mergeAndSave() {
         continue;
 
       let finalPrice = price;
-      if (r.key === "buff" || r.key === "youpin") finalPrice = price / CNY_TO_USD;
+      // TYLKO YOUPIN przeliczamy z CNY → USD
+      if (r.key === "youpin") finalPrice = price / CNY_TO_USD;
 
       candidates.push({ price: finalPrice, site: r.key });
     }
