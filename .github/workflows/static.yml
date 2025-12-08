@@ -2,7 +2,7 @@ name: Merge & Deploy Prices
 
 on:
   schedule:
-    - cron: "30 * * * *"   # każda godzina o :30
+   # - cron: "30 * * * *"   # każda godzina o :30
   workflow_dispatch:
 
 permissions:
