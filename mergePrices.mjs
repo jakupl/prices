@@ -12,6 +12,7 @@ const STOCK_THRESHOLD = 1;
 
 const YOUPIN_ALLOWED_HOURS = [4, 12, 20];
 const YOUPIN_CACHE_PATH = "public/lastYoupin.json";
+const YOUPIN_STALE_MS = 24 * 60 * 60 * 1000; // 24h
 
 const sources = [
   {
@@ -121,47 +122,81 @@ function isYoupinAllowedNow() {
   return YOUPIN_ALLOWED_HOURS.includes(getWarsawHour());
 }
 
-function loadYoupinCache() {
+/**
+ * Cache helpers
+ * Cache file structure:
+ * {
+ *   fetchedAt: "2025-12-08T14:21:00.000Z",
+ *   items: { "<market_hash_name>": { p: <price>, c: <stock> }, ... }
+ * }
+ */
+function loadYoupinCacheRaw() {
   try {
     if (!fs.existsSync(YOUPIN_CACHE_PATH)) return null;
     const raw = fs.readFileSync(YOUPIN_CACHE_PATH, "utf-8");
     return JSON.parse(raw);
-  } catch {
+  } catch (err) {
+    console.warn("Nieudane wczytanie cache YOUPIN:", err.message);
     return null;
   }
 }
 
-function saveYoupinCache(data) {
+function loadYoupinCacheItems() {
+  const raw = loadYoupinCacheRaw();
+  return raw && raw.items && typeof raw.items === "object" ? raw.items : null;
+}
+
+function saveYoupinCache(items) {
   try {
+    const payload = {
+      fetchedAt: new Date().toISOString(),
+      items: items || {}
+    };
     fs.mkdirSync("public", { recursive: true });
-    fs.writeFileSync(YOUPIN_CACHE_PATH, JSON.stringify(data, null, 2), "utf-8");
-    console.log("Zapisano lastYoupin.json");
+    fs.writeFileSync(YOUPIN_CACHE_PATH, JSON.stringify(payload, null, 2), "utf-8");
+    console.log("Zapisano lastYoupin.json (cache)");
   } catch (err) {
     console.error("Błąd zapisu lastYoupin.json:", err.message);
   }
 }
 
+function isYoupinCacheStale() {
+  const raw = loadYoupinCacheRaw();
+  if (!raw || !raw.fetchedAt) return true;
+  const t = Date.parse(raw.fetchedAt);
+  if (Number.isNaN(t)) return true;
+  return (Date.now() - t) > YOUPIN_STALE_MS;
+}
+
 async function mergeAndSave() {
   console.log("Start mergeAndSave");
 
-  const youpinAllowed = isYoupinAllowedNow();
+  const allowedNow = isYoupinAllowedNow();
+  const cacheExists = !!loadYoupinCacheItems();
+  const cacheStale = isYoupinCacheStale();
 
-  if (youpinAllowed) {
-    console.log(`YOUPIN: godzina dozwolona → będzie pobierany.`);
+  // Decide whether we should fetch youpin this run:
+  // - if allowedNow -> fetch
+  // - else if cache stale or missing -> force fetch (to ensure at least once per 24h)
+  // - else -> do not fetch
+  const shouldFetchYoupin = allowedNow || cacheStale;
+
+  if (allowedNow) {
+    console.log("YOUPIN: dozwolona godzina — będzie pobierany.");
+  } else if (cacheStale) {
+    console.log("YOUPIN: cache brak/nieaktualny (>24h) — wymuszone pobranie mimo godzin niedozwolonych.");
   } else {
-    console.log(`YOUPIN: godzina niedozwolona → używam cache.`);
+    console.log("YOUPIN: godzina niedozwolona i cache świeży — używam cache.");
   }
 
-  const actualSources = sources.filter(
-    s => !(s.key === "youpin" && !youpinAllowed)
-  );
-
-  const results = await Promise.all(
-    actualSources.map(async (s) => {
+  // Fetch other sources (buff, csfloat) in parallel
+  const otherSources = sources.filter(s => s.key !== "youpin");
+  const otherResults = await Promise.all(
+    otherSources.map(async (s) => {
       try {
-        const json = await fetchSiteItems(s);
-        console.log(`Fetched ${Object.keys(json).length} items from ${s.site}`);
-        return { key: s.key, site: s.site, items: json };
+        const items = await fetchSiteItems(s);
+        console.log(`Fetched ${Object.keys(items).length} items from ${s.site}`);
+        return { key: s.key, site: s.site, items };
       } catch (err) {
         console.error(`Błąd pobierania ${s.site}: ${err.message}`);
         return { key: s.key, site: s.site, items: {} };
@@ -169,30 +204,49 @@ async function mergeAndSave() {
     })
   );
 
-  // Jeśli YOUPIN był pobrany → zapisz cache
-  if (youpinAllowed) {
-    const youpinData = results.find(r => r.key === "youpin")?.items ?? {};
-    saveYoupinCache(youpinData);
-  }
+  // Handle YOUPIN separately according to decision
+  let youpinResult = null;
+  const youpinSource = sources.find(s => s.key === "youpin");
 
-  // Jeśli YOUPIN był pominięty → użyj cache jeżeli istnieje
-  if (!youpinAllowed) {
-    const cached = loadYoupinCache();
-    if (cached) {
-      console.log("Załadowano YOUPIN z cache");
-      results.push({ key: "youpin", site: "YOUPIN898 (cache)", items: cached });
+  if (shouldFetchYoupin) {
+    try {
+      const items = await fetchSiteItems(youpinSource);
+      console.log(`Fetched ${Object.keys(items).length} items from YOUPIN (live)`);
+      youpinResult = { key: "youpin", site: "YOUPIN898", items };
+      // save cache
+      saveYoupinCache(items);
+    } catch (err) {
+      console.error(`Błąd pobierania YOUPIN: ${err.message}`);
+      const cachedItems = loadYoupinCacheItems();
+      if (cachedItems) {
+        console.log("Błąd pobierania YOUPIN — używam cache jako fallback");
+        youpinResult = { key: "youpin", site: "YOUPIN898 (cache-fallback)", items: cachedItems };
+      } else {
+        console.log("Błąd pobierania YOUPIN i brak cache — YOUPIN będzie pominięty");
+        youpinResult = { key: "youpin", site: "YOUPIN898", items: {} };
+      }
+    }
+  } else {
+    // not supposed to fetch; use cache if exists
+    const cachedItems = loadYoupinCacheItems();
+    if (cachedItems) {
+      console.log("Używam YOUPIN z cache (bez pobierania)");
+      youpinResult = { key: "youpin", site: "YOUPIN898 (cache)", items: cachedItems };
     } else {
-      console.log("Brak YOUPIN w cache — pomijam");
-      results.push({ key: "youpin", site: "YOUPIN898", items: {} });
+      console.log("Brak cache YOUPIN i pobieranie nie jest dozwolone — pomijam YOUPIN");
+      youpinResult = { key: "youpin", site: "YOUPIN898", items: {} };
     }
   }
+
+  // Combine all results
+  const results = [...otherResults, youpinResult];
 
   // ---------------------------------------------
   // MERGING
   // ---------------------------------------------
 
   const allNames = new Set();
-  results.forEach(r => Object.keys(r.items).forEach(n => allNames.add(n)));
+  results.forEach(r => Object.keys(r.items || {}).forEach(n => allNames.add(n)));
   console.log(`Total distinct item names: ${allNames.size}`);
 
   const transformed = { items: {} };
@@ -204,8 +258,8 @@ async function mergeAndSave() {
       const v = r.items[name];
       if (!v) continue;
 
-      const price = parsePrice(v.p);
-      const stock = Number(v.c);
+      const price = parsePrice(v.p ?? v.price);
+      const stock = Number(v.c ?? v.count ?? v.stock);
 
       if (!Number.isFinite(price) || !Number.isFinite(stock) || stock < STOCK_THRESHOLD)
         continue;
@@ -218,7 +272,11 @@ async function mergeAndSave() {
 
     if (candidates.length === 0) continue;
 
-    candidates.sort((a, b) => a.price - b.price);
+    candidates.sort((a, b) => {
+      if (a.price !== b.price) return a.price - b.price;
+      const pref = { csfloat: 0, buff: 1, youpin: 2 };
+      return (pref[a.site] ?? 99) - (pref[b.site] ?? 99);
+    });
 
     const best = candidates[0];
     transformed.items[name] = {
