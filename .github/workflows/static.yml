@@ -1,62 +1,89 @@
-name: Merge & Deploy Prices
+name: Build & deploy GitHub Pages (generate mergedPriceList.json first)
 
+# uruchamianie: push na main, manualnie lub co godzinę (minuta 15)
 on:
-  schedule:
-   # - cron: "30 * * * *"   # każda godzina o :30
+  push:
+    branches: [ main ]
   workflow_dispatch:
+  schedule:
+    # co godzinę, minuta 15 (unikamy pełnej godziny by zmniejszyć chance opóźnień)
+    - cron: '15 * * * *'
 
 permissions:
-  contents: write
-  pages: write
+  contents: read    # potrzebne do checkout
+  pages: write      # do deploy
   id-token: write
 
 jobs:
-  build:
+  build-and-upload:
+    name: Build site & upload Pages artifact
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: 18
 
-      - name: Install dependencies (if any)
-        run: npm ci || true
-
-      - name: Run merge script
-        env:
-          SKINS_API_KEY: ${{ secrets.SKINS_API_KEY }}
-        run: node mergePrices.mjs
-
-      - name: Commit generated files
+      - name: Install dependencies (if package.json present)
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add public/mergedPriceList.json public/lastYoupin.json || true
-
-          if ! git diff --staged --quiet; then
-            git commit -m "Auto-update merged prices"
-            git push
+          if [ -f package.json ]; then
+            npm ci
           else
-            echo "No changes to commit"
+            echo "no package.json, skipping npm install"
           fi
 
-      - name: Upload GitHub Pages artifact
+      - name: Generate mergedPriceList.json
+        id: gen
+        run: |
+          echo "Running generator: node mergePrices.mjs"
+          # uruchomienie generatora — jeśli Twój skrypt ma inną ścieżkę/komendę, zamień tutaj
+          node mergePrices.mjs
+          if [ ! -f mergedPriceList.json ]; then
+            echo "ERROR: mergedPriceList.json not found" >&2
+            ls -la
+            exit 1
+          fi
+          # szybka walidacja JSON
+          node -e "console.log('JSON parse ok'); JSON.parse(require('fs').readFileSync('mergedPriceList.json','utf8'))"
+
+      - name: Prepare publish folder
+        run: |
+          mkdir -p public
+          mv -f mergedPriceList.json public/
+          # jeśli repo zawiera index.html, skopiujemy; jeśli nie, utworzymy prosty plik
+          if [ -f index.html ]; then
+            cp -n index.html public/
+          else
+            cat > public/index.html <<'HTML'
+<!doctype html>
+<meta charset="utf-8">
+<title>Prices - mergedPriceList.json</title>
+<h1>Prices (automatically generated)</h1>
+<p>Plik <code>mergedPriceList.json</code> jest publikowany obok tej strony.</p>
+<p><a href="./mergedPriceList.json">Pobierz mergedPriceList.json</a></p>
+HTML
+          fi
+          echo "Contents of public/:"
+          ls -la public
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: public   # publikujemy cały katalog public/
+          path: public
 
   deploy:
-    needs: build
+    name: Deploy artifact to GitHub Pages
+    needs: build-and-upload
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
-
     steps:
       - name: Deploy to GitHub Pages
-        id: deploy
         uses: actions/deploy-pages@v4
