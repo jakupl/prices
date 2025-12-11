@@ -65,6 +65,16 @@ function parsePrice(val) {
   return Number.isFinite(n) ? n : NaN;
 }
 
+/**
+ * fetchSiteItems - rozszerzona obsługa formatów źródeł
+ * - csfloat: oczekuje { items: { "<name>": { price, stock } } }
+ * - buff: obsługuje:
+ *    1) tablicę wpisów [{ market_hash_name, price, stock }, ...]
+ *    2) obiekt { items: { "<name>": { price, stock } } }
+ *    3) nowy top-level mapping { "<name>": { price, stock }, "updated_at": "...", ... }
+ *   Zwraca ujednolicony mapping: { "<name>": { p: <price>, c: <stock> } }
+ * - inne źródła (np. youpin/skins-table): oczekuje { items: { ... } }
+ */
 async function fetchSiteItems(source) {
   const json = await safeFetchJson(source.url);
 
@@ -82,6 +92,7 @@ async function fetchSiteItems(source) {
   if (source.custom === "buff") {
     const converted = {};
 
+    // 1) BUFF zwraca tablicę wpisów
     if (Array.isArray(json)) {
       for (const entry of json) {
         const name = entry.market_hash_name ?? entry.market_name ?? entry.name;
@@ -91,6 +102,7 @@ async function fetchSiteItems(source) {
       return converted;
     }
 
+    // 2) BUFF zwraca obiekt { items: { ... } }
     if (json?.items && typeof json.items === "object") {
       for (const [name, obj] of Object.entries(json.items)) {
         converted[name] = { p: obj.price, c: obj.stock };
@@ -98,9 +110,27 @@ async function fetchSiteItems(source) {
       return converted;
     }
 
+    // 3) NOWY FORMAT: top-level mapping np.:
+    //    { "updated_at": "...", "<market_hash_name>": { price, stock }, ... }
+    if (json && typeof json === "object") {
+      for (const [name, obj] of Object.entries(json)) {
+        // pomijamy znane pola metadanych i wartości które nie są obiektami
+        if (name === "updated_at" || name === "timestamp" || name === "generated_at") continue;
+        if (!obj || typeof obj !== "object") continue;
+        // wymagamy przynajmniej jednego z oczekiwanych pól (price/stock)
+        if (!("price" in obj) && !("stock" in obj) && !("count" in obj)) continue;
+
+        // normalizujemy nazwę pola stock -> stock/count
+        const stock = ("stock" in obj) ? obj.stock : ("count" in obj ? obj.count : undefined);
+        converted[name] = { p: obj.price, c: stock };
+      }
+      if (Object.keys(converted).length > 0) return converted;
+    }
+
     throw new Error("Nieoczekiwany format BUFF");
   }
 
+  // Domyślnie oczekujemy struktury { items: { "<name>": { price, stock } } }
   if (!json || typeof json.items !== "object") {
     throw new Error("Nieoczekiwany format YOUPIN/skins-table");
   }
