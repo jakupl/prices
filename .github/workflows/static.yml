@@ -42,7 +42,6 @@ jobs:
         id: gen
         run: |
           echo "Running generator: node mergePrices.mjs"
-          # uruchomienie generatora — jeśli Twój skrypt ma inną ścieżkę/komendę, zamień tutaj
           node mergePrices.mjs
           if [ ! -f mergedPriceList.json ]; then
             echo "ERROR: mergedPriceList.json not found" >&2
@@ -56,7 +55,6 @@ jobs:
         run: |
           mkdir -p public
           mv -f mergedPriceList.json public/
-          # jeśli repo zawiera index.html, skopiujemy; jeśli nie, utworzymy prosty plik
           if [ -f index.html ]; then
             cp -n index.html public/
           else
@@ -65,8 +63,8 @@ jobs:
 <meta charset="utf-8">
 <title>Prices - mergedPriceList.json</title>
 <h1>Prices (automatically generated)</h1>
-<p>Plik <code>mergedPriceList.json</code> jest publikowany obok tej strony.</p>
-<p><a href="./mergedPriceList.json">Pobierz mergedPriceList.json</a></p>
+<p><code>mergedPriceList.json</code></p>
+<p><a href="./mergedPriceList.json">mergedPriceList.json</a></p>
 HTML
           fi
           echo "Contents of public/:"
