@@ -1,15 +1,16 @@
-name: Build & deploy GitHub Pages (generate mergedPriceList.json first)
+name: Build & deploy GitHub Pages (hourly + on-demand)
 
+# Uruchomienia: push na main, ręcznie (workflow_dispatch) oraz co godzinę (cron)
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
   schedule:
-    # co godzinę: minuta 15 (unikamy pełnej godziny)
-    - cron: '15 * * * *'
+    - cron: '15 * * * *'    # co godzinę, minuta 15
 
+# Zapewniamy, że równoległe runy nie będą się ze sobą gryźć
 concurrency:
-  group: pages-deploy-${{ github.ref }}
+  group: pages-deploy-${{ github.repository }}-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -19,8 +20,8 @@ permissions:
 
 jobs:
   build:
-    name: Build site & prepare Pages artifact
     runs-on: ubuntu-latest
+    name: Build and prepare artifact
 
     steps:
       - name: Checkout repository
@@ -28,71 +29,59 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Node.js
+      - name: Setup Node.js 18
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: '18'
 
-      - name: Install dependencies (if present)
+      - name: Install dependencies if needed
         run: |
           if [ -f package.json ]; then
-            echo "package.json found — running npm ci"
             npm ci
           else
-            echo "no package.json — skipping npm install"
+            echo "no package.json -> skip npm install"
           fi
 
-      - name: Clean previous outputs (safety)
+      - name: Ensure clean public folder
         run: |
           rm -rf public || true
           mkdir -p public
 
-      - name: Generate mergedPriceList.json
-        id: gen
+      - name: Run generator (create mergedPriceList.json)
+        id: generate
         run: |
-          echo "-> Running generator: node mergePrices.mjs"
-          # Jeśli masz inną komendę, zamień poniższą linię:
+          echo "Running generator: node mergePrices.mjs"
+          # jeśli generator jest w innej lokalizacji lub wymaga npm run -> zmień tę linię
           node mergePrices.mjs
-          echo "-> generator exit code: $?"
+          rc=$?
+          echo "Generator exit code: $rc"
+          if [ $rc -ne 0 ]; then
+            echo "ERROR: generator failed (exit $rc)" >&2
+            exit $rc
+          fi
           if [ ! -f mergedPriceList.json ]; then
-            echo "ERROR: mergedPriceList.json not found after running generator" >&2
-            ls -la
+            echo "ERROR: mergedPriceList.json not found after generator" >&2
+            ls -la || true
             exit 1
           fi
-          # szybka walidacja JSON (zakończy job przy błędzie parsowania)
-          node -e "JSON.parse(require('fs').readFileSync('mergedPriceList.json','utf8')); console.log('mergedPriceList.json: valid JSON')"
+          # walidacja JSON
+          node -e "JSON.parse(require('fs').readFileSync('mergedPriceList.json','utf8')); console.log('mergedPriceList.json OK')"
 
-      - name: Move generated file to publish folder
+      - name: Move artifact to public/
         run: |
-          mv -f mergedPriceList.json public/
-          # jeżeli masz index.html w repo — skopiuj, w przeciwnym razie utwórz prosty placeholder
-          if [ -f index.html ]; then
-            cp -n index.html public/
-          else
-            cat > public/index.html <<'HTML'
+          mv -f mergedPriceList.json public/ || (echo "move failed" && ls -la && exit 1)
+          if [ -f index.html ]; then cp -n index.html public/; else cat > public/index.html <<'HTML'
 <!doctype html>
 <meta charset="utf-8">
 <title>Prices - mergedPriceList.json</title>
 <h1>Prices (auto-generated)</h1>
-<p><a href="./mergedPriceList.json">Pobierz mergedPriceList.json</a></p>
+<p><a href="./mergedPriceList.json">mergedPriceList.json</a></p>
 HTML
           fi
-
-      - name: Show public folder contents (debug)
-        run: |
-          echo "---- public/ listing ----"
-          ls -la public || true
-          echo "---- sizes ----"
-          du -sh public || true
-
-      - name: Create tar of public (debug + ensure upload)
-        run: |
-          tar -czf public.tar.gz -C public .
-          echo "public tar created"
-          ls -lh public.tar.gz || true
+          echo "public/ contents:" && ls -la public
 
       - name: Configure GitHub Pages
-        uses: actions/configure-pages@v4
+        uses: actions/configure-pages@v5
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
@@ -100,15 +89,9 @@ HTML
           path: public
 
   deploy:
-    name: Deploy artifact to GitHub Pages
     needs: build
     runs-on: ubuntu-latest
+    name: Deploy artifact to GitHub Pages
     steps:
-      - name: Deploy to GitHub Pages
-        id: deploy
+      - name: Deploy
         uses: actions/deploy-pages@v4
-
-      - name: Show deployment URL
-        if: success()
-        run: |
-          echo "Deployment job finished. See logs above for the published URL (deploy step prints it)."
