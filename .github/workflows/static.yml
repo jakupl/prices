@@ -1,27 +1,30 @@
 name: Build & deploy GitHub Pages (generate mergedPriceList.json first)
 
-# uruchamianie: push na main, manualnie lub co godzinę (minuta 15)
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
   schedule:
-    # co godzinę, minuta 15 (unikamy pełnej godziny by zmniejszyć chance opóźnień)
-    - cron: '5 * * * *'
+    # co godzinę: minuta 15 (unikamy pełnej godziny)
+    - cron: '15 * * * *'
+
+concurrency:
+  group: pages-deploy-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
-  contents: read    # potrzebne do checkout
-  pages: write      # do deploy
+  contents: read
+  pages: write
   id-token: write
 
 jobs:
-  build-and-upload:
-    name: Build site & upload Pages artifact
+  build:
+    name: Build site & prepare Pages artifact
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -30,31 +33,39 @@ jobs:
         with:
           node-version: 18
 
-      - name: Install dependencies (if package.json present)
+      - name: Install dependencies (if present)
         run: |
           if [ -f package.json ]; then
+            echo "package.json found — running npm ci"
             npm ci
           else
-            echo "no package.json, skipping npm install"
+            echo "no package.json — skipping npm install"
           fi
+
+      - name: Clean previous outputs (safety)
+        run: |
+          rm -rf public || true
+          mkdir -p public
 
       - name: Generate mergedPriceList.json
         id: gen
         run: |
-          echo "Running generator: node mergePrices.mjs"
+          echo "-> Running generator: node mergePrices.mjs"
+          # Jeśli masz inną komendę, zamień poniższą linię:
           node mergePrices.mjs
+          echo "-> generator exit code: $?"
           if [ ! -f mergedPriceList.json ]; then
-            echo "ERROR: mergedPriceList.json not found" >&2
+            echo "ERROR: mergedPriceList.json not found after running generator" >&2
             ls -la
             exit 1
           fi
-          # szybka walidacja JSON
-          node -e "console.log('JSON parse ok'); JSON.parse(require('fs').readFileSync('mergedPriceList.json','utf8'))"
+          # szybka walidacja JSON (zakończy job przy błędzie parsowania)
+          node -e "JSON.parse(require('fs').readFileSync('mergedPriceList.json','utf8')); console.log('mergedPriceList.json: valid JSON')"
 
-      - name: Prepare publish folder
+      - name: Move generated file to publish folder
         run: |
-          mkdir -p public
           mv -f mergedPriceList.json public/
+          # jeżeli masz index.html w repo — skopiuj, w przeciwnym razie utwórz prosty placeholder
           if [ -f index.html ]; then
             cp -n index.html public/
           else
@@ -62,13 +73,23 @@ jobs:
 <!doctype html>
 <meta charset="utf-8">
 <title>Prices - mergedPriceList.json</title>
-<h1>Prices (automatically generated)</h1>
-<p><code>mergedPriceList.json</code></p>
-<p><a href="./mergedPriceList.json">mergedPriceList.json</a></p>
+<h1>Prices (auto-generated)</h1>
+<p><a href="./mergedPriceList.json">Pobierz mergedPriceList.json</a></p>
 HTML
           fi
-          echo "Contents of public/:"
-          ls -la public
+
+      - name: Show public folder contents (debug)
+        run: |
+          echo "---- public/ listing ----"
+          ls -la public || true
+          echo "---- sizes ----"
+          du -sh public || true
+
+      - name: Create tar of public (debug + ensure upload)
+        run: |
+          tar -czf public.tar.gz -C public .
+          echo "public tar created"
+          ls -lh public.tar.gz || true
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v4
@@ -80,8 +101,14 @@ HTML
 
   deploy:
     name: Deploy artifact to GitHub Pages
-    needs: build-and-upload
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Deploy to GitHub Pages
+        id: deploy
         uses: actions/deploy-pages@v4
+
+      - name: Show deployment URL
+        if: success()
+        run: |
+          echo "Deployment job finished. See logs above for the published URL (deploy step prints it)."
