@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
   schedule:
     # co godzinę, minuta 15 (unikamy pełnej godziny by zmniejszyć chance opóźnień)
-    - cron: '15 * * * *'
+    - cron: '5 * * * *'
 
 permissions:
   contents: read    # potrzebne do checkout
